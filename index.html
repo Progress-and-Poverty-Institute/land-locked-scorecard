@@ -75,6 +75,13 @@
   .ledger td.lbl{text-align:left;}
   .reset{background:none;border:none;color:var(--soft);text-decoration:underline;font-size:.8rem;cursor:pointer;margin-top:18px;}
   .hidden{display:none;}
+  .wait h2{font-size:1.25rem;color:var(--navy);}
+  .wait .done{font-weight:800;color:var(--green);font-size:1.05rem;margin-bottom:8px;}
+  .codeform{display:flex;gap:10px;}
+  .codeform input{flex:1;min-width:0;padding:12px;font-size:1.3rem;font-weight:800;letter-spacing:3px;text-transform:uppercase;
+    border:2px solid var(--line);border-radius:10px;text-align:center;}
+  .codeform input:focus{outline:none;border-color:var(--green);}
+  .codeform button{padding:12px 16px;border-radius:11px;border:none;font-size:1rem;font-weight:700;cursor:pointer;}
   .tag{display:inline-block;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:20px;margin-left:6px;}
   .tag.lvt{background:var(--tintg);color:var(--green-d);}
   .tag.reg{background:var(--tintr);color:var(--grey-d);}
@@ -95,16 +102,23 @@
 /* Keep in sync with tools/rules.py (the Word documents are built from that file). */
 const ZONES=[
   // p0 = land price in Year 1, g = rise per year, prem = extra cost to buy a lot back
-  {key:"DT",name:"Downtown",cost:10,rent:11,lvtLand:11,maxH:4,parcels:5,p0:40,g:5,prem:20},
-  {key:"MT",name:"Midtown", cost:6, rent:7, lvtLand:7, maxH:3,parcels:6,p0:25,g:3,prem:10},
-  {key:"PE",name:"Periphery",cost:3,rent:4, lvtLand:4, maxH:2,parcels:6,p0:14,g:2,prem:6},
+  // lvtLand / regLand = land tax per lot before the reassessment; lvtLand2 / regLand2 = from the reassessment on
+  {key:"DT",name:"Downtown",cost:10,rent:11,lvtLand:11,lvtLand2:13,regLand:1,regLand2:2,maxH:4,parcels:5,p0:40,g:5,prem:20},
+  {key:"MT",name:"Midtown", cost:6, rent:7, lvtLand:7, lvtLand2:8, regLand:1,regLand2:1,maxH:3,parcels:6,p0:25,g:3,prem:10},
+  {key:"PE",name:"Periphery",cost:3,rent:4, lvtLand:4, lvtLand2:5, regLand:1,regLand2:1,maxH:2,parcels:6,p0:14,g:2,prem:6},
 ];
-const REG_LAND=1;                         // property-tax land per parcel (flat)
-const REG_BLDG=[0,1,5,13,25];             // property-tax building tax by height
-const bldgTax=f=>REG_BLDG[f];
+const REG_BLDG=[0,1,5,13,25];             // property-tax building tax by height, before the reassessment
+const REG_BLDG2=[0,2,7,16,29];            // ... and from the reassessment on (+$1 per story)
+const REASSESS_YEAR=5;                    // tax bills are reassessed from this year on
+const reassessed=()=>S.round>=REASSESS_YEAR;
+const bldgTax=f=>(reassessed()?REG_BLDG2:REG_BLDG)[f];
 const START_CASH=110;
-const GAME_YEARS=6;                       // facilitator-only: the card ends the game after this year
-const limitFor=r=> r<=3?1:2;              // parcels developed per year
+const GAME_YEARS=8;                       // facilitator-only: the card ends the game after this year
+const limitFor=r=> r<=3?1 : r<=7?2 : 3;   // parcels developed per year
+// each year starts only when the team types its code; the facilitator's slide for that year shows it (rules.py YEAR_CODES)
+const YEAR_CODES=["","SEED","ROOF","PARK","DOOR","BELL","LAMP","GATE","TILE"];
+// company value at the start (cash + every lot at Year 1 prices); shareholders' profit is measured from here
+const START_WORTH=START_CASH+ZONES.reduce((s,z)=>s+z.parcels*z.p0,0);
 const zoneByKey=k=>ZONES.find(z=>z.key===k);
 const price=(k,y)=>{const z=zoneByKey(k); return z.p0+z.g*(y-1);};   // same in both towns
 const buyPrice=(k,y)=>price(k,y)+zoneByKey(k).prem;
@@ -122,6 +136,7 @@ function fresh(town, name){
     log:[], // {round, built:[], sold:{}, bought:{}, rent, tax, endCash}
     // working counters for the current round
     cur:null,
+    locked:true,   // waiting for the facilitator's code to start the current year
     started:false, ended:false
   };
 }
@@ -137,10 +152,12 @@ function stories(){ let t=0; ZONES.forEach(z=>S.parcels[z.key].forEach(h=>{if(h>
 function storiesByZone(k){ let t=0; S.parcels[k].forEach(h=>{if(h>0)t+=h;}); return t;}
 function vacantCount(k){ return S.parcels[k].filter(h=>h===0).length; }
 function builtCount(k){ return S.parcels[k].filter(h=>h>0).length; }
-function landTax(){
-  if(S.town==="LVT") return ZONES.reduce((s,z)=>s+z.lvtLand*parcelsOwned(z.key),0);
-  return REG_LAND*totalOwned();
+function lotLandTax(z){
+  if(S.town==="LVT") return reassessed()?z.lvtLand2:z.lvtLand;
+  return reassessed()?z.regLand2:z.regLand;
 }
+function landTax(){ return ZONES.reduce((s,z)=>s+lotLandTax(z)*parcelsOwned(z.key),0); }
+function prevWorth(){ return S.log.length?S.log[S.log.length-1].worth:START_WORTH; }
 function buildingTax(){
   if(S.town==="LVT") return 0;
   let t=0; ZONES.forEach(z=>S.parcels[z.key].forEach(h=>{if(h>0)t+=bldgTax(h);})); return t;
@@ -205,7 +222,13 @@ function finishRound(){
               rent, tax, endCash:S.cash, land, worth:S.cash+land, stories:stories(), owned:totalOwned()});
   window.scrollTo(0,0);
   if(r>=GAME_YEARS){ S.ended=true; S.autoEnded=true; render(); return; }   // the final year ends the game
-  S.round++; startRoundWork(); render();
+  S.round++; S.locked=true; startRoundWork(); render();
+}
+function unlock(){
+  const el=document.getElementById("yearCode");
+  const typed=(el.value||"").trim().toUpperCase().replace(/[^A-Z]/g,"");
+  if(typed===YEAR_CODES[S.round]){ S.locked=false; window.scrollTo(0,0); render(); return; }
+  document.getElementById("codeMsg").classList.remove("hidden"); el.select();
 }
 function endGame(){
   // facilitator-triggered early finish. Close out the current in-progress year WITHOUT collecting another
@@ -218,6 +241,8 @@ function render(){
   const app=document.getElementById("app");
   if(!S){ app.innerHTML=townPick(); return; }
   if(S.ended){ app.innerHTML=finalScreen(); wire(); return; }
+  if(S.locked){ app.innerHTML = header() + statusBar() + waitCard() + endEarlyBtn() + resetBtn();
+    const el=document.getElementById("yearCode"); if(el) el.focus({preventScroll:true}); return; }
   app.innerHTML = header() + statusBar() + roundCard() + navButtons() + resetBtn();
   wire();
 }
@@ -234,6 +259,7 @@ function townPick(){
     <button class="reg" onclick="choose('REG')">Property Tax Town
       <small>Tax on land + buildings — taller costs more</small></button>
   </div>
+  <div class="note">After you pick, your card waits for your host: each year starts with a code shown on the screen.</div>
   <div class="note">Nothing is saved to a server — your game lives on this device. Don't refresh the page mid-game.</div>`;
 }
 function header(){
@@ -246,6 +272,7 @@ function statusBar(){
     <div><div class="lbl">Bank</div><div class="cash ${neg}">${money(S.cash)}</div></div>
     <div><div class="lbl">Land value</div><div class="cash" style="font-size:1rem">${money(landValue(S.round))}</div></div>
     <div><div class="lbl">Company value</div><div class="cash" style="font-size:1rem;color:var(--navy)">${money(S.cash+landValue(S.round))}</div></div>
+    <div><div class="lbl">Shareholder profit so far</div><div class="cash" style="font-size:1rem;color:${S.cash+landValue(S.round)-START_WORTH>=0?'var(--good)':'var(--bad)'}">${S.cash+landValue(S.round)-START_WORTH>=0?'+':''}${money(S.cash+landValue(S.round)-START_WORTH)}</div></div>
     <div class="pill">Parcels owned: <b>${totalOwned()}</b></div>
     <div class="pill">Stories: <b>${stories()}</b></div>
     <div class="rnd">Year ${S.round}</div>
@@ -265,6 +292,15 @@ function roundCard(){
   html += `<br>Land prices this year: ` + ZONES.map(z=>`${z.name} <b>$${price(z.key,S.round)}</b>`).join(" · ") +
           ` <span class="muted">(they rise every year)</span>`;
   html += `</div>`;
+  if(S.round===REASSESS_YEAR){
+    html += `<div class="warn" style="background:#fff8e6;border-color:#f0d9a0;color:#6b4e00"><b>Reassessment year.</b> The town has re-valued property, and your tax bill changes from this year on: `+
+      (S.town==="LVT"
+        ? `land is worth more, so <b>land tax rises</b> to $${ZONES.map(z=>z.lvtLand2).join(" / $")} a lot (Downtown / Midtown / Periphery). Your buildings are still not taxed.`
+        : `everything you’ve built is reassessed, so <b>building tax rises $1 per story</b> (1–4 stories: $${REG_BLDG2.slice(1).join(" / $")}), and Downtown land tax rises to $${ZONES[0].regLand2}.`)+`</div>`;
+  }
+  if(S.round>1 && limitFor(S.round)>limitFor(S.round-1)){
+    html += `<div class="warn" style="background:#eaf3ed;border-color:#b9dcc8;color:#0a5442"><b>Your company is growing!</b> More construction crews — you can now develop <b>${limitFor(S.round)} lots</b> this year.</div>`;
+  }
 
   // STEP 1 buy/sell — only from Round 2 on. Round 1 is build-only (setup).
   if(!setup){
@@ -300,7 +336,7 @@ function roundCard(){
   const canBuildMore = S.cur.builtThisRound < limit;
   ZONES.forEach(z=>{
     html += `<div class="zone"><div class="zt">${z.name} — build $${z.cost}/story, rent $${z.rent}/story`;
-    html += S.town==="LVT" ? `, land tax $${z.lvtLand}` : ``;
+    html += S.town==="LVT" ? `, land tax $${lotLandTax(z)}` : ``;
     html += `</div>`;
     // list parcels of this zone
     S.parcels[z.key].forEach((h,idx)=>{
@@ -340,6 +376,7 @@ function roundCard(){
         <div><b>Net this year</b></div><div class="v ${net>=0?'plus':'minus'}"><b>${net>=0?'+':''}${money(net)}</b></div>
         <div>Bank after this year</div><div class="v">${money(S.cash+net)}</div>
         <div>Company value after this year</div><div class="v">${money(S.cash+net+landValue(S.round))}</div>
+        <div>Profit for shareholders this year</div><div class="v ${S.cash+net+landValue(S.round)-prevWorth()>=0?'plus':'minus'}">${S.cash+net+landValue(S.round)-prevWorth()>=0?'+':''}${money(S.cash+net+landValue(S.round)-prevWorth())}</div>
       </div></div>`;
   } else {
     html += `<div class="card"><h2>Rent &amp; Tax</h2>
@@ -348,6 +385,27 @@ function roundCard(){
   return html;
 }
 
+function waitCard(){
+  const last=S.log[S.log.length-1];
+  let html=`<div class="card wait">`;
+  if(last){
+    const p=last.worth-(S.log.length>1?S.log[S.log.length-2].worth:START_WORTH);
+    html += `<div class="done">✓ Year ${last.round} is done.</div>`;
+    if(last.round>=2) html += `<div class="summary" style="margin-bottom:12px">
+        <div>Rent collected</div><div class="v plus">+${money(last.rent)}</div>
+        <div>Taxes paid</div><div class="v minus">−${money(last.tax)}</div>
+        <div><b>Profit for shareholders</b></div><div class="v ${p>=0?'plus':'minus'}"><b>${p>=0?'+':''}${money(p)}</b></div></div>`;
+    html += `<div class="note" style="margin:0 0 12px">Make sure your board matches what you did this year.</div>`;
+  }
+  html += `<h2>Waiting for Year ${S.round}</h2>
+    <div class="step">Your host starts each year. When Year ${S.round} is on the screen, type its code here.</div>
+    <div class="codeform"><input id="yearCode" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false"
+        placeholder="Code" onkeydown="if(event.key==='Enter')unlock()">
+      <button class="next" onclick="unlock()">Start Year ${S.round}</button></div>
+    <div id="codeMsg" class="warn hidden">That’s not the code for Year ${S.round}. Check the screen — or wait for your host to put it up.</div>
+  </div>`;
+  return html;
+}
 function navButtons(){
   const label = S.round===1 ? "Finish setup → begin Year 2"
              : `End Year ${S.round} → Year ${S.round+1}`;
@@ -358,8 +416,9 @@ function navButtons(){
     if(S.cash+net<0){ short=true; warn=`<div class="warn">⚠ After paying tax you'll be short by ${money(Math.abs(S.cash+net))}. No loans — sell some vacant land (Step 1) before ending the year.</div>`; }
   }
   return warn+`<div class="btns"><button class="next" ${short?'disabled':''} onclick="finishRound()">${label}</button></div>`
-    +`<button class="reset" onclick="if(confirm('End the game now and see results? Do this only if the facilitator tells you to stop early.')){endGame();}">End game early (only if the facilitator says)</button>`;
+    +endEarlyBtn();
 }
+function endEarlyBtn(){ return `<button class="reset" onclick="if(confirm('End the game now and see results? Do this only if the facilitator tells you to stop early.')){endGame();}">End game early (only if the facilitator says)</button><br>`; }
 function resetBtn(){ return `<button class="reset" onclick="if(confirm('Start over? This clears your game.')){S=null;render();}">Start over</button>`; }
 
 function finalScreen(){
@@ -367,13 +426,14 @@ function finalScreen(){
   // land is valued at the price of the last completed year
   const lastYear=Math.max(1,S.log.length?S.log[S.log.length-1].round:1);
   const land=landValue(lastYear);
-  let rows=S.log.map(l=>`<tr><td class="lbl">Year ${l.round}</td>
+  let rows=S.log.map((l,i)=>`<tr><td class="lbl">Year ${l.round}</td>
      <td>${l.round>=2?'+$'+l.rent:'—'}</td>
      <td>${l.round>=2?'−$'+l.tax:'—'}</td>
      <td>${l.stories}</td>
      <td>$${l.endCash}</td>
      <td>$${l.land}</td>
-     <td><b>$${l.worth}</b></td></tr>`).join("");
+     <td><b>$${l.worth}</b></td>
+     <td>${(()=>{const p=l.worth-(i?S.log[i-1].worth:START_WORTH); return (p>=0?'+':'')+money(p);})()}</td></tr>`).join("");
   const tag = S.town==="LVT"?`<span class="tag lvt">Land Tax Town</span>`:`<span class="tag reg">Property Tax Town</span>`;
   const code=resultCode(lastYear, land);
   const banner = S.autoEnded
@@ -383,6 +443,7 @@ function finalScreen(){
   <div class="final">
     <h2>Final tally</h2>
     <div class="row"><span>Company value</span><b>$${S.cash+land}</b></div>
+    <div class="row"><span>Profit for shareholders <span class="zsplit">(since the start: $${START_WORTH})</span></span><b>${S.cash+land-START_WORTH>=0?'+':''}${money(S.cash+land-START_WORTH)}</b></div>
     <div class="row"><span>Dollars in the bank</span><b>$${S.cash}</b></div>
     <div class="row"><span>Land value <span class="zsplit">(Year ${lastYear} prices)</span></span><b>$${land}</b></div>
     <div class="row"><span>Parcels owned</span><b>${totalOwned()} / 17</b></div>
@@ -390,7 +451,7 @@ function finalScreen(){
     <div class="row"><span class="zsplit">Downtown ${dt} · Midtown ${mt} · Periphery ${pe}</span><span></span></div>
   </div>
   <div class="card"><h2>Year by year</h2>
-    <table class="ledger"><thead><tr><th>Year</th><th>Rent</th><th>Tax</th><th>Stories</th><th>Bank</th><th>Land</th><th>Company</th></tr></thead>
+    <table class="ledger"><thead><tr><th>Year</th><th>Rent</th><th>Tax</th><th>Stories</th><th>Bank</th><th>Land</th><th>Company</th><th>Profit</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div class="note">Bring these numbers to the debrief — especially how many parcels you ended up owning, and where you built.</div>
   </div>
