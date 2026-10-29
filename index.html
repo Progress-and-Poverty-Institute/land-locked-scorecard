@@ -109,14 +109,14 @@ const ZONES=[
 ];
 const REG_BLDG=[0,1,5,13,25];             // property-tax building tax by height, before the reassessment
 const REG_BLDG2=[0,2,7,16,29];            // ... and from the reassessment on (+$1 per story)
-const REASSESS_YEAR=5;                    // tax bills are reassessed from this year on
+const REASSESS_YEAR=4;                    // tax bills are reassessed from this year on
 const reassessed=()=>S.round>=REASSESS_YEAR;
 const bldgTax=f=>(reassessed()?REG_BLDG2:REG_BLDG)[f];
 const START_CASH=110;
-const GAME_YEARS=8;                       // facilitator-only: the card ends the game after this year
-const limitFor=r=> r<=3?1 : r<=7?2 : 3;   // parcels developed per year
+const GAME_YEARS=6;                       // facilitator-only: the card ends the game after this year
+const limitFor=r=> r<=3?1 : r<=5?2 : 3;   // parcels developed per year
 // each year starts only when the team types its code; the facilitator's slide for that year shows it (rules.py YEAR_CODES)
-const YEAR_CODES=["","LAND","LOTS","RENT","CREW","VALUE","ZONE","TOWER","BOOM"];
+const YEAR_CODES=["","LAND","LOTS","RENT","VALUE","TOWER","BOOM"];
 // company value at the start (cash + every lot at Year 1 prices); shareholders' profit is measured from here
 const START_WORTH=START_CASH+ZONES.reduce((s,z)=>s+z.parcels*z.p0,0);
 const zoneByKey=k=>ZONES.find(z=>z.key===k);
