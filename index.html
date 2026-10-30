@@ -272,7 +272,6 @@ function statusBar(){
     <div><div class="lbl">Bank</div><div class="cash ${neg}">${money(S.cash)}</div></div>
     <div><div class="lbl">Land value</div><div class="cash" style="font-size:1rem">${money(landValue(S.round))}</div></div>
     <div><div class="lbl">Company value</div><div class="cash" style="font-size:1rem;color:var(--navy)">${money(S.cash+landValue(S.round))}</div></div>
-    <div><div class="lbl">Shareholder profit so far</div><div class="cash" style="font-size:1rem;color:${S.cash+landValue(S.round)-START_WORTH>=0?'var(--good)':'var(--bad)'}">${S.cash+landValue(S.round)-START_WORTH>=0?'+':''}${money(S.cash+landValue(S.round)-START_WORTH)}</div></div>
     <div class="pill">Parcels owned: <b>${totalOwned()}</b></div>
     <div class="pill">Stories: <b>${stories()}</b></div>
     <div class="rnd">Year ${S.round}</div>
@@ -376,7 +375,6 @@ function roundCard(){
         <div><b>Net this year</b></div><div class="v ${net>=0?'plus':'minus'}"><b>${net>=0?'+':''}${money(net)}</b></div>
         <div>Bank after this year</div><div class="v">${money(S.cash+net)}</div>
         <div>Company value after this year</div><div class="v">${money(S.cash+net+landValue(S.round))}</div>
-        <div>Profit for shareholders this year</div><div class="v ${S.cash+net+landValue(S.round)-prevWorth()>=0?'plus':'minus'}">${S.cash+net+landValue(S.round)-prevWorth()>=0?'+':''}${money(S.cash+net+landValue(S.round)-prevWorth())}</div>
       </div></div>`;
   } else {
     html += `<div class="card"><h2>Rent &amp; Tax</h2>
@@ -389,12 +387,11 @@ function waitCard(){
   const last=S.log[S.log.length-1];
   let html=`<div class="card wait">`;
   if(last){
-    const p=last.worth-(S.log.length>1?S.log[S.log.length-2].worth:START_WORTH);
     html += `<div class="done">✓ Year ${last.round} is done.</div>`;
     if(last.round>=2) html += `<div class="summary" style="margin-bottom:12px">
         <div>Rent collected</div><div class="v plus">+${money(last.rent)}</div>
         <div>Taxes paid</div><div class="v minus">−${money(last.tax)}</div>
-        <div><b>Profit for shareholders</b></div><div class="v ${p>=0?'plus':'minus'}"><b>${p>=0?'+':''}${money(p)}</b></div></div>`;
+        <div><b>Company value</b></div><div class="v"><b>${money(last.worth)}</b></div></div>`;
     html += `<div class="note" style="margin:0 0 12px">Make sure your board matches what you did this year.</div>`;
   }
   html += `<h2>Waiting for Year ${S.round}</h2>
@@ -432,8 +429,7 @@ function finalScreen(){
      <td>${l.stories}</td>
      <td>$${l.endCash}</td>
      <td>$${l.land}</td>
-     <td><b>$${l.worth}</b></td>
-     <td>${(()=>{const p=l.worth-(i?S.log[i-1].worth:START_WORTH); return (p>=0?'+':'')+money(p);})()}</td></tr>`).join("");
+     <td><b>$${l.worth}</b></td></tr>`).join("");
   const tag = S.town==="LVT"?`<span class="tag lvt">Land Tax Town</span>`:`<span class="tag reg">Property Tax Town</span>`;
   const code=resultCode(lastYear, land);
   const banner = S.autoEnded
@@ -443,7 +439,6 @@ function finalScreen(){
   <div class="final">
     <h2>Final tally</h2>
     <div class="row"><span>Company value</span><b>$${S.cash+land}</b></div>
-    <div class="row"><span>Profit for shareholders <span class="zsplit">(since the start: $${START_WORTH})</span></span><b>${S.cash+land-START_WORTH>=0?'+':''}${money(S.cash+land-START_WORTH)}</b></div>
     <div class="row"><span>Dollars in the bank</span><b>$${S.cash}</b></div>
     <div class="row"><span>Land value <span class="zsplit">(Year ${lastYear} prices)</span></span><b>$${land}</b></div>
     <div class="row"><span>Parcels owned</span><b>${totalOwned()} / 17</b></div>
@@ -451,7 +446,7 @@ function finalScreen(){
     <div class="row"><span class="zsplit">Downtown ${dt} · Midtown ${mt} · Periphery ${pe}</span><span></span></div>
   </div>
   <div class="card"><h2>Year by year</h2>
-    <table class="ledger"><thead><tr><th>Year</th><th>Rent</th><th>Tax</th><th>Stories</th><th>Bank</th><th>Land</th><th>Company</th><th>Profit</th></tr></thead>
+    <table class="ledger"><thead><tr><th>Year</th><th>Rent</th><th>Tax</th><th>Stories</th><th>Bank</th><th>Land</th><th>Company</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div class="note">Bring these numbers to the debrief — especially how many parcels you ended up owning, and where you built.</div>
   </div>
